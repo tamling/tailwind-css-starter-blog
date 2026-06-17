@@ -9,7 +9,7 @@ struct AudienceView: View {
         ZStack {
             Color.black
             if !state.blackout {
-                PDFPageView(document: state.slideDoc, pageIndex: state.index)
+                SlideView(pageIndex: state.index, interactive: false)
             }
         }
         .ignoresSafeArea()

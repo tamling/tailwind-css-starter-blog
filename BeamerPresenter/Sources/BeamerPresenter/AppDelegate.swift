@@ -134,8 +134,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case 5:            state.showOverview.toggle()   // G
         case 11:           state.blackout.toggle()       // B
         case 15:           state.resetTimer()            // R
+        case 35:           state.toggleTool(.pen)        // P
+        case 37:           state.toggleTool(.laser)      // L
+        case 6:            state.undoStroke()            // Z
+        case 8:            state.clearStrokes()          // C
         case 53:                                         // esc
-            if state.showOverview { state.showOverview = false } else { return false }
+            if state.tool != .none { state.tool = .none; state.laserPoint = nil }
+            else if state.showOverview { state.showOverview = false }
+            else { return false }
         default:           return false
         }
         return true

@@ -28,9 +28,9 @@ struct PresenterView: View {
                 ControlBar(onOpen: onOpen)
 
                 HStack(spacing: 8) {
-                    slidePane(title: "Current", index: state.index)
+                    slidePane(title: "Current", index: state.index, interactive: true)
                     VStack(spacing: 8) {
-                        slidePane(title: "Next", index: state.index + 1)
+                        slidePane(title: "Next", index: state.index + 1, interactive: false)
                             .opacity(state.index + 1 < state.pageCount ? 1 : 0.25)
                         notesPane
                     }
@@ -49,10 +49,11 @@ struct PresenterView: View {
         }
     }
 
-    private func slidePane(title: String, index: Int) -> some View {
+    private func slidePane(title: String, index: Int, interactive: Bool) -> some View {
         VStack(spacing: 4) {
             Text(title).font(.caption).foregroundStyle(.secondary)
-            PDFPageView(document: state.slideDoc, pageIndex: index)
+            SlideView(pageIndex: index, interactive: interactive)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .border(.gray.opacity(0.5))
         }
     }
@@ -87,6 +88,8 @@ private struct ControlBar: View {
 
     @State private var now = Date()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    private let penColors: [(String, Color)] = [("Red", .red), ("Green", .green),
+                                                ("Blue", .blue), ("Yellow", .yellow)]
 
     var body: some View {
         HStack(spacing: 12) {
@@ -113,6 +116,30 @@ private struct ControlBar: View {
                 Image(systemName: state.blackout ? "eye.slash.fill" : "eye.slash")
             }
             .help("Black out audience screen (B)")
+
+            Divider().frame(height: 18)
+
+            Button { state.toggleTool(.pen) } label: { Image(systemName: "pencil.tip") }
+                .foregroundStyle(state.tool == .pen ? Color.accentColor : .primary)
+                .help("Pen (P)")
+            Button { state.toggleTool(.laser) } label: { Image(systemName: "dot.circle.and.cursorarrow") }
+                .foregroundStyle(state.tool == .laser ? Color.accentColor : .primary)
+                .help("Laser pointer (L)")
+            ForEach(penColors, id: \.0) { name, color in
+                Button { state.penColor = color } label: {
+                    Circle().fill(color)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(.primary.opacity(state.penColor == color ? 0.9 : 0.2),
+                                                       lineWidth: state.penColor == color ? 2 : 1))
+                }
+                .help("Pen colour: \(name)")
+            }
+            Button { state.undoStroke() } label: { Image(systemName: "arrow.uturn.backward") }
+                .disabled(!state.hasInkOnCurrentSlide)
+                .help("Undo stroke (Z)")
+            Button { state.clearStrokes() } label: { Image(systemName: "trash") }
+                .disabled(!state.hasInkOnCurrentSlide)
+                .help("Clear ink (C)")
 
             Spacer()
 

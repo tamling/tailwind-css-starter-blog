@@ -15,6 +15,8 @@ It works directly off a compiled PDF, so there's no LaTeX parsing involved.
   timer, clock), large current slide, next slide, notes pane.
 - **Thumbnail strip** — click any slide to jump; auto-scrolls to the current one.
 - **Overview grid** — press `G` for a full grid of every slide; click to jump.
+- **Ink & laser** — draw freehand on a slide (pen, 4 colours, undo/clear) or use
+  a laser pointer; both mirror live onto the audience screen.
 - **Audience window** — full-bleed slide, fullscreen on the external display.
 
 ## How notes work
@@ -60,7 +62,11 @@ fullscreen on your external display (or the only display if there's just one).
 | `G` | Toggle the slide overview |
 | `B` | Black out the audience screen |
 | `R` | Reset the elapsed timer |
-| Esc | Close the overview |
+| `P` | Pen tool |
+| `L` | Laser pointer |
+| `Z` | Undo last stroke |
+| `C` | Clear ink on this slide |
+| Esc | Drop the tool → close overview |
 
 Bluetooth presenter remotes emit Page Up / Page Down, so they work out of the box.
 
@@ -73,6 +79,7 @@ Bluetooth presenter remotes emit Page Up / Page Down, so they work out of the bo
 | `PresentationState.swift` | Shared state (index, timer, blackout, overview, thumbnails) |
 | `PDFModel.swift` | Loads the PDF and crops each page into halves |
 | `PDFPageView.swift` | Renders one non-interactive page (SwiftUI ↔ PDFKit) |
+| `SlideView.swift` | Aspect-correct slide + ink/laser annotation layer |
 | `RecentFiles.swift` | Recently-opened list persisted in UserDefaults |
 | `WelcomeView.swift` | Start screen: open, drag-and-drop, recents |
 | `PresenterView.swift` | Root switch + presenter console + control bar |
@@ -80,21 +87,30 @@ Bluetooth presenter remotes emit Page Up / Page Down, so they work out of the bo
 | `OverviewGrid.swift` | Full-window slide overview overlay |
 | `AudienceView.swift` | Full-bleed slide for the projector |
 
-## Shipping a real `.app`
+## Build a real `.app`
 
-`swift run` is for iterating. To distribute a double-clickable, notarized app:
+`swift run` is for iterating. To get a double-clickable bundle, run the included
+script — it builds a release `arm64` binary and wraps it with `Info.plist`:
 
-1. Create a new **macOS App** target in Xcode (SwiftUI lifecycle).
-2. Add these `Sources/BeamerPresenter/*.swift` files to it (remove `main.swift`;
-   use a `@main struct App` instead, or keep the `AppDelegate` via
-   `NSApplicationDelegateAdaptor`).
-3. Set the deployment target to macOS 13, build for `arm64`.
-4. Enable Hardened Runtime, sign with your Developer ID, and notarize.
+```bash
+./build-app.sh
+open build/BeamerPresenter.app
+```
 
-## Roadmap ideas (magicPresenter parity)
+To codesign for distribution, pass your Developer ID:
 
-- **Magic ink** — presenter-only hidden notes + visible freehand annotation on slides
-- On-slide laser pointer
+```bash
+./build-app.sh "Developer ID Application: Your Name (TEAMID)"
+```
+
+Then notarize with `xcrun notarytool submit build/BeamerPresenter.app --wait …`
+and `xcrun stapler staple`. (You can also drop these sources into a regular
+Xcode macOS App target if you prefer the Xcode toolchain.)
+
+## Roadmap ideas
+
 - Embedded links and videos in the PDF
+- Persisting ink between sessions / exporting an annotated PDF
 - Larger / scrollable / markdown notes via the `pdfpc` embedded-notes format
 - Per-slide timing and a rehearsal mode
+- App icon + notarized release build

@@ -1,26 +1,52 @@
 import SwiftUI
 
-/// Your private screen: current slide, next slide, notes, and a status bar with
-/// slide counter, elapsed timer, and wall clock.
-struct PresenterView: View {
+/// Root of the presenter window: shows the welcome screen until a presentation
+/// is loaded, then the full presenter console.
+struct RootPresenterView: View {
     @EnvironmentObject var state: PresentationState
+    let onOpen: () -> Void
+    let onOpenURL: (URL) -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                slidePane(title: "Current", index: state.index)
-                slidePane(title: "Next", index: state.index + 1)
-                    .opacity(state.index + 1 < state.pageCount ? 1 : 0.25)
-            }
-            .frame(maxHeight: .infinity)
+        if state.isLoaded {
+            PresenterView(onOpen: onOpen)
+        } else {
+            WelcomeView(onOpen: onOpen, onOpenURL: onOpenURL)
+        }
+    }
+}
 
-            notesPane
+/// Your private screen: control bar, current slide, next slide, notes, a
+/// thumbnail strip for navigation, and an optional overview overlay.
+struct PresenterView: View {
+    @EnvironmentObject var state: PresentationState
+    let onOpen: () -> Void
+
+    var body: some View {
+        ZStack {
+            VStack(spacing: 8) {
+                ControlBar(onOpen: onOpen)
+
+                HStack(spacing: 8) {
+                    slidePane(title: "Current", index: state.index)
+                    VStack(spacing: 8) {
+                        slidePane(title: "Next", index: state.index + 1)
+                            .opacity(state.index + 1 < state.pageCount ? 1 : 0.25)
+                        notesPane
+                    }
+                    .frame(width: 360)
+                }
                 .frame(maxHeight: .infinity)
 
-            StatusBar()
+                ThumbnailStrip()
+            }
+            .padding(8)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+            if state.showOverview {
+                OverviewGrid().transition(.opacity)
+            }
         }
-        .padding(8)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func slidePane(title: String, index: Int) -> some View {
@@ -39,11 +65,13 @@ struct PresenterView: View {
                 PDFPageView(document: state.notesDoc, pageIndex: state.index)
                     .border(.gray.opacity(0.5))
             }
+            .frame(maxHeight: .infinity)
         } else {
             VStack(spacing: 8) {
+                Image(systemName: "note.text")
                 Text("No notes in this PDF").font(.headline)
-                Text("Compile your Beamer deck with:\n\\setbeameroption{show notes on second screen=right}")
-                    .font(.system(.body, design: .monospaced))
+                Text("Compile with:\n\\setbeameroption{show notes on second screen=right}")
+                    .font(.system(.caption, design: .monospaced))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
             }
@@ -52,23 +80,54 @@ struct PresenterView: View {
     }
 }
 
-private struct StatusBar: View {
+/// Top toolbar with open/close, navigation, overview, blackout, and clocks.
+private struct ControlBar: View {
     @EnvironmentObject var state: PresentationState
+    let onOpen: () -> Void
+
     @State private var now = Date()
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        HStack {
-            Text("Slide \(state.pageCount == 0 ? 0 : state.index + 1) / \(state.pageCount)")
-            if state.blackout {
-                Text("• BLACKED OUT").foregroundStyle(.orange)
+        HStack(spacing: 12) {
+            Button(action: onOpen) { Image(systemName: "folder") }
+                .help("Open another presentation")
+            Button { state.unload() } label: { Image(systemName: "house") }
+                .help("Back to start")
+
+            Divider().frame(height: 18)
+
+            Button { state.previous() } label: { Image(systemName: "chevron.left") }
+                .disabled(state.index == 0)
+            Text("Slide \(state.index + 1) / \(state.pageCount)")
+                .font(.headline.monospacedDigit())
+                .frame(minWidth: 120)
+            Button { state.next() } label: { Image(systemName: "chevron.right") }
+                .disabled(state.index + 1 >= state.pageCount)
+
+            Divider().frame(height: 18)
+
+            Button { state.showOverview.toggle() } label: { Image(systemName: "square.grid.2x2") }
+                .help("Overview (G)")
+            Button { state.blackout.toggle() } label: {
+                Image(systemName: state.blackout ? "eye.slash.fill" : "eye.slash")
             }
+            .help("Black out audience screen (B)")
+
             Spacer()
-            Text("Elapsed " + elapsed)
-            Spacer()
+
+            Label(elapsed, systemImage: "stopwatch")
+                .font(.headline.monospacedDigit())
+            Button { state.resetTimer() } label: { Image(systemName: "arrow.counterclockwise") }
+                .help("Reset timer (R)")
             Text(now, style: .time)
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(.secondary)
         }
-        .font(.headline.monospacedDigit())
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(nsColor: .underPageBackgroundColor))
         .onReceive(tick) { now = $0 }
     }
 

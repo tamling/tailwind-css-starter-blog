@@ -14,8 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        buildPresenterWindow()
         NSApp.activate(ignoringOtherApps: true)
-        openDocument(nil)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -40,62 +40,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        load(url: url)
+    }
 
-        if state.load(url: url) {
-            buildWindowsIfNeeded()
-            positionWindows()
-        } else {
+    private func load(url: URL) {
+        guard state.load(url: url) else {
             let alert = NSAlert()
             alert.messageText = "Could not open PDF"
             alert.informativeText = url.lastPathComponent
             alert.runModal()
+            return
         }
+        RecentFiles.add(url)
+        buildAudienceWindowIfNeeded()
+        positionWindows()
+        audienceWindow?.orderFront(nil)
+        presenterWindow?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Windows
 
-    private func buildWindowsIfNeeded() {
-        if presenterWindow == nil {
-            let presenter = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800),
-                styleMask: [.titled, .closable, .resizable, .miniaturizable],
-                backing: .buffered, defer: false)
-            presenter.title = "Presenter — BeamerPresenter"
-            presenter.contentView = NSHostingView(rootView: PresenterView().environmentObject(state))
-            presenter.makeKeyAndOrderFront(nil)
-            presenterWindow = presenter
-        }
-        if audienceWindow == nil {
-            let audience = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
-                styleMask: [.borderless],
-                backing: .buffered, defer: false)
-            audience.contentView = NSHostingView(rootView: AudienceView().environmentObject(state))
+    private func buildPresenterWindow() {
+        let root = RootPresenterView(
+            onOpen: { [weak self] in self?.openDocument(nil) },
+            onOpenURL: { [weak self] url in self?.load(url: url) }
+        ).environmentObject(state)
+
+        let presenter = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered, defer: false)
+        presenter.title = "BeamerPresenter"
+        presenter.contentView = NSHostingView(rootView: root)
+        presenter.center()
+        presenter.makeKeyAndOrderFront(nil)
+        presenterWindow = presenter
+    }
+
+    private func buildAudienceWindowIfNeeded() {
+        guard audienceWindow == nil else { return }
+        let multiScreen = NSScreen.screens.count > 1
+        let style: NSWindow.StyleMask = multiScreen ? [.borderless] : [.titled, .closable, .resizable]
+
+        let audience = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 720),
+            styleMask: style, backing: .buffered, defer: false)
+        audience.title = "Audience"
+        audience.contentView = NSHostingView(rootView: AudienceView().environmentObject(state))
+        if multiScreen {
             audience.level = .mainMenu
             audience.collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
-            audience.orderFront(nil)
-            audienceWindow = audience
         }
+        audienceWindow = audience
     }
 
     @objc private func screensChanged() { positionWindows() }
 
-    /// Audience window fills the external display (or the only display if there's
-    /// just one); presenter window is centered on the built-in display.
+    /// Audience window fills the external display; presenter window stays on the
+    /// built-in display.
     private func positionWindows() {
         let screens = NSScreen.screens
         guard !screens.isEmpty else { return }
-        let audienceScreen = screens.count > 1 ? screens[1] : screens[0]
-        let presenterScreen = NSScreen.main ?? screens[0]
 
-        audienceWindow?.setFrame(audienceScreen.frame, display: true)
-
-        if let p = presenterWindow, screens.count > 1 {
-            let visible = presenterScreen.visibleFrame
-            let size = p.frame.size
-            p.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
-                                     y: visible.midY - size.height / 2))
+        if screens.count > 1 {
+            audienceWindow?.setFrame(screens[1].frame, display: true)
+            if let p = presenterWindow {
+                let visible = (NSScreen.main ?? screens[0]).visibleFrame
+                let size = p.frame.size
+                p.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
+                                         y: visible.midY - size.height / 2))
+            }
         }
+        // Single-screen: leave the (titled) audience window where the user puts it.
     }
 
     // MARK: - Keyboard
@@ -107,16 +123,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Returns true if the key was consumed.
+    /// Returns true if the key was consumed. Only active once a deck is loaded.
     private func handleKey(_ event: NSEvent) -> Bool {
+        guard state.isLoaded else { return false }
         switch event.keyCode {
         case 124, 49, 121: state.next()              // → / space / page down
         case 123, 116:     state.previous()          // ← / page up
         case 115:          state.goToFirst()         // home
         case 119:          state.goToLast()          // end
-        case 11:           state.blackout.toggle()   // B
-        case 15:           state.resetTimer()        // R
-        case 53:           NSApp.terminate(nil)      // esc
+        case 5:            state.showOverview.toggle()   // G
+        case 11:           state.blackout.toggle()       // B
+        case 15:           state.resetTimer()            // R
+        case 53:                                         // esc
+            if state.showOverview { state.showOverview = false } else { return false }
         default:           return false
         }
         return true
